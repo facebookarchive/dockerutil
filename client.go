@@ -91,13 +91,13 @@ func DockerWithTLS(url, certPath string) (*dockerclient.DockerClient, error) {
 	return client, nil
 }
 
-// BestEfforDockerClient creates a docker client from one of:
+// BestEffortDockerClient creates a docker client from one of:
 //
 // 1. Environment variables as defined in
 //    https://docs.docker.com/reference/commandline/cli/. Specifically
 //    DOCKER_HOST, DOCKER_TLS_VERIFY & DOCKER_CERT_PATH.
 //
-// 2. bootdocker, if darwin.
+// 2. boot2docker, if darwin.
 //
 // 3. /run/docker.sock, if it exists.
 //
