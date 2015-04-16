@@ -12,11 +12,13 @@ import (
 
 // A Container defines a "desired" container.
 type Container struct {
-	name              string
-	containerConfig   *dockerclient.ContainerConfig
-	hostConfig        *dockerclient.HostConfig
-	removeExisting    bool
-	checkRunningImage bool
+	name                string
+	containerConfig     *dockerclient.ContainerConfig
+	hostConfig          *dockerclient.HostConfig
+	removeExisting      bool
+	forceRemoveExisting bool
+	checkRunningImage   bool
+	authConfig          *dockerclient.AuthConfig
 }
 
 type ContainerOption func(c *Container) error
@@ -43,6 +45,11 @@ func ContainerRemoveExisting(c *Container) error {
 	return nil
 }
 
+func ContainerForceRemoveExisting(c *Container) error {
+	c.forceRemoveExisting = true
+	return nil
+}
+
 func ContainerConfig(config *dockerclient.ContainerConfig) ContainerOption {
 	return func(c *Container) error {
 		c.containerConfig = config
@@ -64,8 +71,24 @@ func ContainerCheckRunningImage(c *Container) error {
 	return nil
 }
 
+func ContainerAuthConfig(ac *dockerclient.AuthConfig) ContainerOption {
+	return func(c *Container) error {
+		c.authConfig = ac
+		return nil
+	}
+}
+
 func (c *Container) Apply(docker *dockerclient.DockerClient) error {
 	ci, err := docker.InspectContainer(c.name)
+
+	// force remove existing
+	if c.forceRemoveExisting {
+		if err := docker.RemoveContainer(ci.Id, true, false); err != nil {
+			return stackerr.Wrap(err)
+		}
+		// otherwise we just removed the running container and want to start a new one
+		err = dockerclient.ErrNotFound
+	}
 
 	// already running
 	if err == nil && ci.State.Running {
@@ -86,7 +109,7 @@ func (c *Container) Apply(docker *dockerclient.DockerClient) error {
 
 	// container does not exist, create it
 	if err == dockerclient.ErrNotFound {
-		_, err := dockerutil.CreateWithPull(docker, c.containerConfig, c.name)
+		_, err := dockerutil.CreateWithPull(docker, c.containerConfig, c.name, c.authConfig)
 		if err != nil {
 			return err
 		}
@@ -131,7 +154,7 @@ func (c *Container) checkRunning(docker *dockerclient.DockerClient, current *doc
 		}
 
 		// otherwise remove it since it isn't want we want
-		if err := docker.RemoveContainer(current.Id, true); err != nil {
+		if err := docker.RemoveContainer(current.Id, true, false); err != nil {
 			return false, stackerr.Wrap(err)
 		}
 
