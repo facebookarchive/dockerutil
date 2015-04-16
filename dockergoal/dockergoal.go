@@ -10,7 +10,7 @@ import (
 	"github.com/samalba/dockerclient"
 )
 
-// A Container defines a "desired" container.
+// A Container defines a "desired" container state.
 type Container struct {
 	name                string
 	containerConfig     *dockerclient.ContainerConfig
@@ -21,8 +21,11 @@ type Container struct {
 	authConfig          *dockerclient.AuthConfig
 }
 
+// ContainerOption configure options for a container.
 type ContainerOption func(c *Container) error
 
+// NewContainer creates a new desired container state. This is only the desired
+// state, it isn't applied until Apply is called.
 func NewContainer(options ...ContainerOption) (*Container, error) {
 	var c Container
 	for _, o := range options {
@@ -33,6 +36,7 @@ func NewContainer(options ...ContainerOption) (*Container, error) {
 	return &c, nil
 }
 
+// ContainerName configures the name of the container.
 func ContainerName(name string) ContainerOption {
 	return func(c *Container) error {
 		c.name = name
@@ -40,16 +44,25 @@ func ContainerName(name string) ContainerOption {
 	}
 }
 
+// ContainerRemoveExisting removes an existing container if necessary. If this
+// is option is not specified, and an existing container with a different
+// configuration exists, it will not be removed and an error will be returned.
+// If this option is specified, the existing container will be removed and a
+// new container will be created.
 func ContainerRemoveExisting(c *Container) error {
 	c.removeExisting = true
 	return nil
 }
 
+// ContainerForceRemoveExisting forces removing the existing container if one
+// is found. It does so even if the existing container matches the desired
+// state.
 func ContainerForceRemoveExisting(c *Container) error {
 	c.forceRemoveExisting = true
 	return nil
 }
 
+// ContainerConfig specifies the container configuration.
 func ContainerConfig(config *dockerclient.ContainerConfig) ContainerOption {
 	return func(c *Container) error {
 		c.containerConfig = config
@@ -57,6 +70,7 @@ func ContainerConfig(config *dockerclient.ContainerConfig) ContainerOption {
 	}
 }
 
+// ContainerHostConfig specifies the container host configuration.
 func ContainerHostConfig(config *dockerclient.HostConfig) ContainerOption {
 	return func(c *Container) error {
 		c.hostConfig = config
@@ -71,6 +85,8 @@ func ContainerCheckRunningImage(c *Container) error {
 	return nil
 }
 
+// ContainerAuthConfig specifies the auth credentials used when pulling an
+// image.
 func ContainerAuthConfig(ac *dockerclient.AuthConfig) ContainerOption {
 	return func(c *Container) error {
 		c.authConfig = ac
@@ -78,6 +94,8 @@ func ContainerAuthConfig(ac *dockerclient.AuthConfig) ContainerOption {
 	}
 }
 
+// Apply creates the container, possibly removing it as necessary based on the
+// container options that were set.
 func (c *Container) Apply(docker dockerclient.Client) error {
 	ci, err := docker.InspectContainer(c.name)
 
@@ -86,7 +104,7 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 		if err := docker.RemoveContainer(ci.Id, true, false); err != nil {
 			return stackerr.Wrap(err)
 		}
-		// otherwise we just removed the running container and want to start a new one
+		// we just removed the running container and want to start a new one
 		err = dockerclient.ErrNotFound
 	}
 
@@ -98,7 +116,7 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 			return nil
 		}
 
-		// otherwise we just removed the running container and want to start a new one
+		// we just removed the running container and want to start a new one
 		err = dockerclient.ErrNotFound
 	}
 
@@ -166,6 +184,8 @@ func (c *Container) checkRunning(docker dockerclient.Client, current *dockerclie
 	return true, nil
 }
 
+// ApplyGraph creates all the specified containers. It handles links making
+// sure the dependencies are created in the right order.
 func ApplyGraph(docker dockerclient.Client, containers []*Container) error {
 	known := map[string]struct{}{}
 	started := map[string]bool{}
