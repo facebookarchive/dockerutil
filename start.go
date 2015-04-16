@@ -11,6 +11,7 @@ func CreateWithPull(
 	d *dockerclient.DockerClient,
 	c *dockerclient.ContainerConfig,
 	name string,
+	ac *dockerclient.AuthConfig,
 ) (string, error) {
 
 	id, err := d.CreateContainer(c, name)
@@ -24,7 +25,7 @@ func CreateWithPull(
 	}
 
 	// need to pull the image
-	if err := d.PullImage(c.Image, nil); err != nil {
+	if err := d.PullImage(c.Image, ac); err != nil {
 		return "", stackerr.Wrap(err)
 	}
 

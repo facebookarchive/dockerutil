@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -165,4 +167,27 @@ func boot2dockerIncludeEnv(l string) bool {
 		}
 	}
 	return false
+}
+
+func AuthConfigFromFile(file string) (*dockerclient.AuthConfig, error) {
+	r, err := os.Open(file)
+	if err != nil {
+		return nil, stackerr.Wrap(err)
+	}
+	defer r.Close()
+	raw := make(map[string]map[string]string)
+	if err := json.NewDecoder(r).Decode(&raw); err != nil {
+		return nil, stackerr.Wrap(err)
+	}
+	inner := raw["https://index.docker.io/v1/"]
+	var ac dockerclient.AuthConfig
+	ac.Email = inner["email"]
+	userPass, err := base64.URLEncoding.DecodeString(inner["auth"])
+	if err != nil {
+		return nil, stackerr.Wrap(err)
+	}
+	parts := bytes.SplitN(userPass, []byte(":"), 2)
+	ac.Username = string(parts[0])
+	ac.Password = string(parts[1])
+	return &ac, nil
 }
