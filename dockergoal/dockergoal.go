@@ -17,7 +17,6 @@ type Container struct {
 	hostConfig          *dockerclient.HostConfig
 	removeExisting      bool
 	forceRemoveExisting bool
-	checkRunningImage   bool
 	authConfig          *dockerclient.AuthConfig
 }
 
@@ -49,7 +48,7 @@ func ContainerName(name string) ContainerOption {
 // configuration exists, it will not be removed and an error will be returned.
 // If this option is specified, the existing container will be removed and a
 // new container will be created.
-func ContainerRemoveExisting(c *Container) ContainerOption {
+func ContainerRemoveExisting() ContainerOption {
 	return func(c *Container) error {
 		c.removeExisting = true
 		return nil
@@ -59,7 +58,7 @@ func ContainerRemoveExisting(c *Container) ContainerOption {
 // ContainerForceRemoveExisting forces removing the existing container if one
 // is found. It does so even if the existing container matches the desired
 // state.
-func ContainerForceRemoveExisting(c *Container) ContainerOption {
+func ContainerForceRemoveExisting() ContainerOption {
 	return func(c *Container) error {
 		c.forceRemoveExisting = true
 		return nil
@@ -78,15 +77,6 @@ func ContainerConfig(config *dockerclient.ContainerConfig) ContainerOption {
 func ContainerHostConfig(config *dockerclient.HostConfig) ContainerOption {
 	return func(c *Container) error {
 		c.hostConfig = config
-		return nil
-	}
-}
-
-// ContainerCheckRunningImage will trigger checking of the running image ID
-// with the goal image ID.
-func ContainerCheckRunningImage(c *Container) ContainerOption {
-	return func(c *Container) error {
-		c.checkRunningImage = true
 		return nil
 	}
 }
@@ -154,11 +144,6 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 }
 
 func (c *Container) checkRunning(docker dockerclient.Client, current *dockerclient.ContainerInfo) (bool, error) {
-	// only do this check if configured to do so, otherwise consider the running container ok
-	if !c.checkRunningImage {
-		return true, nil
-	}
-
 	// image comparison is by ID, so we need to find the ID of our desired image
 	desiredImageID, err := dockerutil.ImageID(docker, c.containerConfig.Image, nil)
 	if err != nil {
