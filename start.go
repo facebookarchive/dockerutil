@@ -8,7 +8,7 @@ import (
 // CreateWithPull is the same as CreateContainer but will pull the image if it
 // isn't found and retry creating the container.
 func CreateWithPull(
-	d *dockerclient.DockerClient,
+	d dockerclient.Client,
 	c *dockerclient.ContainerConfig,
 	name string,
 	ac *dockerclient.AuthConfig,

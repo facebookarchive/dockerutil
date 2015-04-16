@@ -14,7 +14,7 @@ import (
 )
 
 // BindingAddr provides the address for the container and binding.
-func BindingAddr(d *dockerclient.DockerClient, name, binding string) (string, error) {
+func BindingAddr(d dockerclient.Client, name, binding string) (string, error) {
 	ci, err := d.InspectContainer(name)
 	if err != nil {
 		return "", stackerr.Wrap(err)
@@ -42,7 +42,7 @@ func BindingAddr(d *dockerclient.DockerClient, name, binding string) (string, er
 	return addr, nil
 }
 
-func dockerIP(d *dockerclient.DockerClient) (net.IP, error) {
+func dockerIP(d dockerclient.Client) (net.IP, error) {
 	switch runtime.GOOS {
 	case "darwin":
 		out, err := exec.Command("boot2docker", "ip").Output()

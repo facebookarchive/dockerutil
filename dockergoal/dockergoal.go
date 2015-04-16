@@ -78,7 +78,7 @@ func ContainerAuthConfig(ac *dockerclient.AuthConfig) ContainerOption {
 	}
 }
 
-func (c *Container) Apply(docker *dockerclient.DockerClient) error {
+func (c *Container) Apply(docker dockerclient.Client) error {
 	ci, err := docker.InspectContainer(c.name)
 
 	// force remove existing
@@ -129,7 +129,7 @@ func (c *Container) Apply(docker *dockerclient.DockerClient) error {
 	return nil
 }
 
-func (c *Container) checkRunning(docker *dockerclient.DockerClient, current *dockerclient.ContainerInfo) (bool, error) {
+func (c *Container) checkRunning(docker dockerclient.Client, current *dockerclient.ContainerInfo) (bool, error) {
 	// only do this check if configured to do so, otherwise consider the running container ok
 	if !c.checkRunningImage {
 		return true, nil
@@ -166,7 +166,7 @@ func (c *Container) checkRunning(docker *dockerclient.DockerClient, current *doc
 	return true, nil
 }
 
-func ApplyGraph(docker *dockerclient.DockerClient, containers []*Container) error {
+func ApplyGraph(docker dockerclient.Client, containers []*Container) error {
 	known := map[string]struct{}{}
 	started := map[string]bool{}
 

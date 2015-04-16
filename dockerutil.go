@@ -7,7 +7,7 @@ import (
 
 // ImageID returns the image ID for the given image name. If the imageName is
 // not known, it will also attempt to pull the image as well.
-func ImageID(d *dockerclient.DockerClient, imageName string, auth *dockerclient.AuthConfig) (string, error) {
+func ImageID(d dockerclient.Client, imageName string, auth *dockerclient.AuthConfig) (string, error) {
 	id, err := imageIDFromList(d, imageName)
 	if err != nil {
 		return "", err
@@ -31,7 +31,7 @@ func ImageID(d *dockerclient.DockerClient, imageName string, auth *dockerclient.
 	return "", stackerr.Newf("image named %q could not be identified", imageName)
 }
 
-func imageIDFromList(d *dockerclient.DockerClient, imageName string) (string, error) {
+func imageIDFromList(d dockerclient.Client, imageName string) (string, error) {
 	images, err := d.ListImages()
 	if err != nil {
 		return "", stackerr.Wrap(err)
