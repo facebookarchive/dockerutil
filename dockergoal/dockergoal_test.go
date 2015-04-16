@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/facebookgo/ensure"
+	"github.com/facebookgo/stackerr"
 	"github.com/samalba/dockerclient"
 )
 
@@ -119,4 +120,70 @@ func TestApplyMakesNew(t *testing.T) {
 	ensure.DeepEqual(t, inspectCalls, 2)
 	ensure.DeepEqual(t, createCalls, 1)
 	ensure.DeepEqual(t, startCalls, 1)
+}
+
+func TestApplyForceRemoveExisting(t *testing.T) {
+	const removeID = "y"
+	const newID = "z"
+	givenContainerConfig := &dockerclient.ContainerConfig{Image: "foo"}
+	var removeCalls, inspectCalls, createCalls, startCalls int
+	container, err := NewContainer(
+		ContainerName("x"),
+		ContainerConfig(givenContainerConfig),
+		ContainerForceRemoveExisting(),
+	)
+	ensure.Nil(t, err)
+	client := &mockClient{
+		removeContainer: func(id string, force, volumes bool) error {
+			removeCalls++
+			ensure.DeepEqual(t, id, removeID)
+			ensure.True(t, force)
+			ensure.False(t, volumes)
+			return nil
+		},
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			inspectCalls++
+			switch inspectCalls {
+			case 1:
+				return &dockerclient.ContainerInfo{Id: removeID}, nil
+			case 2:
+				return &dockerclient.ContainerInfo{Id: newID}, nil
+			}
+			panic("not reached")
+		},
+		createContainer: func(config *dockerclient.ContainerConfig, name string) (string, error) {
+			createCalls++
+			return "", nil
+		},
+		startContainer: func(id string, config *dockerclient.HostConfig) error {
+			startCalls++
+			ensure.DeepEqual(t, id, newID)
+			return nil
+		},
+	}
+	ensure.Nil(t, container.Apply(client))
+	ensure.DeepEqual(t, removeCalls, 1)
+	ensure.DeepEqual(t, inspectCalls, 2)
+	ensure.DeepEqual(t, createCalls, 1)
+	ensure.DeepEqual(t, startCalls, 1)
+}
+
+func TestApplyForceRemoveExistingError(t *testing.T) {
+	container, err := NewContainer(
+		ContainerName("x"),
+		ContainerConfig(&dockerclient.ContainerConfig{Image: "foo"}),
+		ContainerForceRemoveExisting(),
+	)
+	ensure.Nil(t, err)
+	givenErr := errors.New("")
+	client := &mockClient{
+		removeContainer: func(id string, force, volumes bool) error {
+			return givenErr
+		},
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			return &dockerclient.ContainerInfo{Id: "x"}, nil
+		},
+	}
+	err = container.Apply(client)
+	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
 }
