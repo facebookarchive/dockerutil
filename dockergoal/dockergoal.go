@@ -49,17 +49,21 @@ func ContainerName(name string) ContainerOption {
 // configuration exists, it will not be removed and an error will be returned.
 // If this option is specified, the existing container will be removed and a
 // new container will be created.
-func ContainerRemoveExisting(c *Container) error {
-	c.removeExisting = true
-	return nil
+func ContainerRemoveExisting(c *Container) ContainerOption {
+	return func(c *Container) error {
+		c.removeExisting = true
+		return nil
+	}
 }
 
 // ContainerForceRemoveExisting forces removing the existing container if one
 // is found. It does so even if the existing container matches the desired
 // state.
-func ContainerForceRemoveExisting(c *Container) error {
-	c.forceRemoveExisting = true
-	return nil
+func ContainerForceRemoveExisting(c *Container) ContainerOption {
+	return func(c *Container) error {
+		c.forceRemoveExisting = true
+		return nil
+	}
 }
 
 // ContainerConfig specifies the container configuration.
@@ -80,9 +84,11 @@ func ContainerHostConfig(config *dockerclient.HostConfig) ContainerOption {
 
 // ContainerCheckRunningImage will trigger checking of the running image ID
 // with the goal image ID.
-func ContainerCheckRunningImage(c *Container) error {
-	c.checkRunningImage = true
-	return nil
+func ContainerCheckRunningImage(c *Container) ContainerOption {
+	return func(c *Container) error {
+		c.checkRunningImage = true
+		return nil
+	}
 }
 
 // ContainerAuthConfig specifies the auth credentials used when pulling an
