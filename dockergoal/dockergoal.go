@@ -2,12 +2,17 @@
 package dockergoal
 
 import (
+	"errors"
 	"strings"
 
 	"github.com/facebookgo/dockerutil"
 	"github.com/facebookgo/errgroup"
 	"github.com/facebookgo/stackerr"
 	"github.com/samalba/dockerclient"
+)
+
+var (
+	errNameMissing = errors.New("dockergoal: ContainerName is required")
 )
 
 // A Container defines a "desired" container state.
@@ -31,6 +36,9 @@ func NewContainer(options ...ContainerOption) (*Container, error) {
 		if err := o(&c); err != nil {
 			return nil, err
 		}
+	}
+	if c.name == "" {
+		return nil, errNameMissing
 	}
 	return &c, nil
 }
