@@ -344,6 +344,22 @@ func TestApplyWithWithDesiredImageAndNotRunning(t *testing.T) {
 	ensure.DeepEqual(t, startCalls, 1)
 }
 
+func TestApplyInitialInspectError(t *testing.T) {
+	givenErr := errors.New("")
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: "x",
+		},
+	}
+	client := &mockClient{
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			return nil, givenErr
+		},
+	}
+	err := container.Apply(client)
+	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
+}
+
 func TestCheckRunningWithDesiredImage(t *testing.T) {
 	const image = "x"
 	const id = "y"
