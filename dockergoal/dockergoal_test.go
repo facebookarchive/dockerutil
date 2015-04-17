@@ -2,6 +2,7 @@ package dockergoal
 
 import (
 	"errors"
+	"regexp"
 	"testing"
 
 	"github.com/facebookgo/ensure"
@@ -238,4 +239,26 @@ func TestCheckRunningWithDesiredImage(t *testing.T) {
 	ok, err := container.checkRunning(client, &dockerclient.ContainerInfo{Image: id})
 	ensure.Nil(t, err)
 	ensure.True(t, ok)
+}
+
+func TestCheckRunningWithoutDesiredImageAndNoRemoveExisting(t *testing.T) {
+	const image = "x"
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: image,
+		},
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{image},
+					Id:       "y",
+				},
+			}, nil
+		},
+	}
+	ok, err := container.checkRunning(client, &dockerclient.ContainerInfo{Image: "z"})
+	ensure.Err(t, err, regexp.MustCompile("but desired image is"))
+	ensure.False(t, ok)
 }
