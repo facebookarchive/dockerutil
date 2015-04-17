@@ -600,3 +600,48 @@ func TestApplyGraphSingle(t *testing.T) {
 	ensure.DeepEqual(t, createCalls, 1)
 	ensure.DeepEqual(t, startCalls, 1)
 }
+
+func TestApplyGraphWithLinks(t *testing.T) {
+	const (
+		container1Name = "n1"
+		container2Name = "n2"
+		imageName      = "in1"
+		imageID        = "ii1"
+	)
+	inspectNames := make(chan string, 2)
+	containers := []*Container{
+		{
+			name:            container1Name,
+			containerConfig: &dockerclient.ContainerConfig{Image: imageName},
+			hostConfig: &dockerclient.HostConfig{
+				Links: []string{container2Name + ":foo"},
+			},
+		},
+		{
+			name:            container2Name,
+			containerConfig: &dockerclient.ContainerConfig{Image: imageName},
+		},
+	}
+	client := &mockClient{
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			inspectNames <- name
+			ci := &dockerclient.ContainerInfo{
+				Id:    "x",
+				Image: imageID,
+			}
+			ci.State.Running = true
+			return ci, nil
+		},
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{imageName},
+					Id:       imageID,
+				},
+			}, nil
+		},
+	}
+	ensure.Nil(t, ApplyGraph(client, containers))
+	ensure.DeepEqual(t, <-inspectNames, container2Name)
+	ensure.DeepEqual(t, <-inspectNames, container1Name)
+}
