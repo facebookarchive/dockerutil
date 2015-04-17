@@ -1,4 +1,6 @@
-// Package dockergoal is a library to reach a set of container goals.
+// Package dockergoal is a library to reach a set of container goals. It
+// provides the ability to apply "deltas" in the form of recreating containers
+// as necessary as the goal configuration changes.
 package dockergoal
 
 import (
