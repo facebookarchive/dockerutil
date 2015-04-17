@@ -557,3 +557,46 @@ func TestCheckRunningRemoveError(t *testing.T) {
 	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
 	ensure.False(t, ok)
 }
+
+func TestApplyGraphSingle(t *testing.T) {
+	const givenName = "x"
+	const givenID = "y"
+	givenContainerConfig := &dockerclient.ContainerConfig{Image: "foo"}
+	givenHostConfig := &dockerclient.HostConfig{}
+	var inspectCalls, createCalls, startCalls int
+	container, err := NewContainer(
+		ContainerName(givenName),
+		ContainerConfig(givenContainerConfig),
+		ContainerHostConfig(givenHostConfig),
+	)
+	ensure.Nil(t, err)
+	client := &mockClient{
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			inspectCalls++
+			switch inspectCalls {
+			case 1:
+				ensure.DeepEqual(t, name, givenName)
+				return nil, dockerclient.ErrNotFound
+			case 2:
+				return &dockerclient.ContainerInfo{Id: givenID}, nil
+			}
+			panic("not reached")
+		},
+		createContainer: func(config *dockerclient.ContainerConfig, name string) (string, error) {
+			createCalls++
+			ensure.True(t, config == givenContainerConfig)
+			ensure.DeepEqual(t, name, givenName)
+			return "", nil
+		},
+		startContainer: func(id string, config *dockerclient.HostConfig) error {
+			startCalls++
+			ensure.DeepEqual(t, id, givenID)
+			ensure.True(t, config == givenHostConfig)
+			return nil
+		},
+	}
+	ensure.Nil(t, ApplyGraph(client, []*Container{container}))
+	ensure.DeepEqual(t, inspectCalls, 2)
+	ensure.DeepEqual(t, createCalls, 1)
+	ensure.DeepEqual(t, startCalls, 1)
+}
