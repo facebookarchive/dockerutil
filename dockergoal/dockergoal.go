@@ -25,6 +25,7 @@ type Container struct {
 	removeExisting      bool
 	forceRemoveExisting bool
 	authConfig          *dockerclient.AuthConfig
+	afterCreate         func(string) error
 }
 
 // ContainerOption configure options for a container.
@@ -100,6 +101,16 @@ func ContainerAuthConfig(ac *dockerclient.AuthConfig) ContainerOption {
 	}
 }
 
+// ContainerAfterCreate specifies a function which is invoked when a new
+// container is created. It is not called if an existing running container with
+// the desired state was found.
+func ContainerAfterCreate(f func(containerID string) error) ContainerOption {
+	return func(c *Container) error {
+		c.afterCreate = f
+		return nil
+	}
+}
+
 // Apply creates the container, possibly removing it as necessary based on the
 // container options that were set.
 func (c *Container) Apply(docker dockerclient.Client) error {
@@ -143,6 +154,7 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 	}
 
 	// container does not exist, create it
+	var created bool
 	if err == dockerclient.ErrNotFound {
 		_, err := dockerutil.CreateWithPull(docker, c.containerConfig, c.name, c.authConfig)
 		if err != nil {
@@ -153,12 +165,21 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 		if err != nil {
 			return stackerr.Wrap(err)
 		}
+
+		created = true
 	}
 
 	// start the container
 	err = docker.StartContainer(ci.Id, c.hostConfig)
 	if err != nil {
 		return stackerr.Wrap(err)
+	}
+
+	if created && c.afterCreate != nil {
+		if err := c.afterCreate(ci.Id); err != nil {
+			docker.RemoveContainer(ci.Id, true, false)
+			return stackerr.Wrap(err)
+		}
 	}
 
 	return nil

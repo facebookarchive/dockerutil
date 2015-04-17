@@ -80,16 +80,32 @@ func TestContainerAuthConfig(t *testing.T) {
 	ensure.True(t, c.authConfig == config)
 }
 
+func TestContainerAfterCreate(t *testing.T) {
+	givenErr := errors.New("")
+	f := func(string) error { return givenErr }
+	c, err := NewContainer(
+		ContainerName("x"),
+		ContainerAfterCreate(f),
+	)
+	ensure.Nil(t, err)
+	ensure.True(t, c.afterCreate("") == givenErr)
+}
+
 func TestApplyMakesNew(t *testing.T) {
 	const givenName = "x"
 	const givenID = "y"
 	givenContainerConfig := &dockerclient.ContainerConfig{Image: "foo"}
 	givenHostConfig := &dockerclient.HostConfig{}
-	var inspectCalls, createCalls, startCalls int
+	var inspectCalls, createCalls, startCalls, afterCreateCalls int
 	container, err := NewContainer(
 		ContainerName(givenName),
 		ContainerConfig(givenContainerConfig),
 		ContainerHostConfig(givenHostConfig),
+		ContainerAfterCreate(func(containerID string) error {
+			afterCreateCalls++
+			ensure.DeepEqual(t, containerID, givenID)
+			return nil
+		}),
 	)
 	ensure.Nil(t, err)
 	client := &mockClient{
@@ -120,6 +136,7 @@ func TestApplyMakesNew(t *testing.T) {
 	ensure.Nil(t, container.Apply(client))
 	ensure.DeepEqual(t, inspectCalls, 2)
 	ensure.DeepEqual(t, createCalls, 1)
+	ensure.DeepEqual(t, afterCreateCalls, 1)
 	ensure.DeepEqual(t, startCalls, 1)
 }
 
@@ -140,6 +157,45 @@ func TestApplyCreateError(t *testing.T) {
 	}
 	err = container.Apply(client)
 	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
+}
+
+func TestApplyAfterCreateError(t *testing.T) {
+	givenErr := errors.New("")
+	const givenName = "x"
+	const givenID = "y"
+	var inspectCalls, removeCalls int
+	container, err := NewContainer(
+		ContainerName(givenName),
+		ContainerConfig(&dockerclient.ContainerConfig{Image: "foo"}),
+		ContainerAfterCreate(func(string) error { return givenErr }),
+	)
+	ensure.Nil(t, err)
+	client := &mockClient{
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			inspectCalls++
+			switch inspectCalls {
+			case 1:
+				return nil, dockerclient.ErrNotFound
+			case 2:
+				return &dockerclient.ContainerInfo{Id: givenID}, nil
+			}
+			panic("not reached")
+		},
+		createContainer: func(config *dockerclient.ContainerConfig, name string) (string, error) {
+			return "", nil
+		},
+		startContainer: func(id string, config *dockerclient.HostConfig) error {
+			return nil
+		},
+		removeContainer: func(id string, force, volumes bool) error {
+			removeCalls++
+			ensure.DeepEqual(t, id, givenID)
+			return nil
+		},
+	}
+	err = container.Apply(client)
+	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
+	ensure.DeepEqual(t, removeCalls, 1)
 }
 
 func TestApplyInspectAfterCreateError(t *testing.T) {
