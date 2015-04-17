@@ -160,6 +160,38 @@ func TestApplyInspectAfterCreateError(t *testing.T) {
 	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(dockerclient.ErrNotFound)))
 }
 
+func TestApplyStartError(t *testing.T) {
+	givenErr := errors.New("")
+	const image = "x"
+	const id = "y"
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: image,
+		},
+	}
+	client := &mockClient{
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			return &dockerclient.ContainerInfo{
+				Id:    "a",
+				Image: id,
+			}, nil
+		},
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{image},
+					Id:       id,
+				},
+			}, nil
+		},
+		startContainer: func(id string, config *dockerclient.HostConfig) error {
+			return givenErr
+		},
+	}
+	err := container.Apply(client)
+	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
+}
+
 func TestApplyForceRemoveExisting(t *testing.T) {
 	const removeID = "y"
 	const newID = "z"
