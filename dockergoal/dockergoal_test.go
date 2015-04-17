@@ -216,3 +216,26 @@ func TestApplyForceRemoveExistingWhenNotFound(t *testing.T) {
 	}
 	ensure.Nil(t, container.Apply(client))
 }
+
+func TestCheckRunningWithDesiredImage(t *testing.T) {
+	const image = "x"
+	const id = "y"
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: image,
+		},
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{image},
+					Id:       id,
+				},
+			}, nil
+		},
+	}
+	ok, err := container.checkRunning(client, &dockerclient.ContainerInfo{Image: id})
+	ensure.Nil(t, err)
+	ensure.True(t, ok)
+}
