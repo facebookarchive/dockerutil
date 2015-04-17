@@ -218,6 +218,51 @@ func TestApplyForceRemoveExistingWhenNotFound(t *testing.T) {
 	ensure.Nil(t, container.Apply(client))
 }
 
+func TestApplyRemovesExistingWithoutDesiredImage(t *testing.T) {
+	const image = "x"
+	const removeID = "y"
+	var inspectCalls, removeCalls int
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: image,
+		},
+		removeExisting: true,
+	}
+	client := &mockClient{
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			inspectCalls++
+			switch inspectCalls {
+			case 1:
+				return &dockerclient.ContainerInfo{Id: removeID, Image: "a"}, nil
+			case 2:
+				return &dockerclient.ContainerInfo{Id: "y"}, nil
+			}
+			panic("not reached")
+		},
+		createContainer: func(config *dockerclient.ContainerConfig, name string) (string, error) {
+			return "", nil
+		},
+		startContainer: func(id string, config *dockerclient.HostConfig) error {
+			return nil
+		},
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{image},
+					Id:       "y",
+				},
+			}, nil
+		},
+		removeContainer: func(id string, force, volumes bool) error {
+			removeCalls++
+			ensure.DeepEqual(t, id, removeID)
+			return nil
+		},
+	}
+	ensure.Nil(t, container.Apply(client))
+	ensure.DeepEqual(t, removeCalls, 1)
+}
+
 func TestCheckRunningWithDesiredImage(t *testing.T) {
 	const image = "x"
 	const id = "y"
@@ -316,7 +361,7 @@ func TestCheckRunningWithoutDesiredImageWithRemoveExisting(t *testing.T) {
 	ensure.DeepEqual(t, removeCalls, 1)
 }
 
-func TestCheckRunningRemovError(t *testing.T) {
+func TestCheckRunningRemoveError(t *testing.T) {
 	const image = "x"
 	givenErr := errors.New("")
 	container := &Container{

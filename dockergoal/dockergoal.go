@@ -113,7 +113,7 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 	}
 
 	// already running
-	if err == nil && ci.State.Running {
+	if err == nil {
 		if ok, err := c.checkRunning(docker, ci); err != nil {
 			return err
 		} else if ok {
