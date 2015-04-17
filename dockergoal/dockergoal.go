@@ -112,16 +112,22 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 		err = dockerclient.ErrNotFound
 	}
 
-	// already running
+	// already exists
 	if err == nil {
-		if ok, err := c.checkRunning(docker, ci); err != nil {
+		ok, err := c.checkRunning(docker, ci)
+		if err != nil {
 			return err
-		} else if ok {
-			return nil
 		}
-
-		// we just removed the running container and want to start a new one
-		err = dockerclient.ErrNotFound
+		if ok {
+			// existing container is good
+			if ci.State.Running {
+				// and it's already running, so we do nothing
+				return nil
+			}
+		} else {
+			// we just removed the running container and want to start a new one
+			err = dockerclient.ErrNotFound
+		}
 	}
 
 	// unknown error, bail
