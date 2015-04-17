@@ -315,3 +315,34 @@ func TestCheckRunningWithoutDesiredImageWithRemoveExisting(t *testing.T) {
 	ensure.False(t, ok)
 	ensure.DeepEqual(t, removeCalls, 1)
 }
+
+func TestCheckRunningRemovError(t *testing.T) {
+	const image = "x"
+	givenErr := errors.New("")
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: image,
+		},
+		removeExisting: true,
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{image},
+					Id:       "y",
+				},
+			}, nil
+		},
+		removeContainer: func(id string, force, volumes bool) error {
+			return givenErr
+		},
+	}
+	ci := &dockerclient.ContainerInfo{
+		Id:    "y",
+		Image: "z",
+	}
+	ok, err := container.checkRunning(client, ci)
+	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
+	ensure.False(t, ok)
+}
