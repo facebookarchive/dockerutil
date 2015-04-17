@@ -187,3 +187,32 @@ func TestApplyForceRemoveExistingError(t *testing.T) {
 	err = container.Apply(client)
 	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
 }
+
+func TestApplyForceRemoveExistingWhenNotFound(t *testing.T) {
+	var inspectCalls int
+	container, err := NewContainer(
+		ContainerName("x"),
+		ContainerConfig(&dockerclient.ContainerConfig{Image: "foo"}),
+		ContainerForceRemoveExisting(),
+	)
+	ensure.Nil(t, err)
+	client := &mockClient{
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			inspectCalls++
+			switch inspectCalls {
+			case 1:
+				return nil, dockerclient.ErrNotFound
+			case 2:
+				return &dockerclient.ContainerInfo{Id: "y"}, nil
+			}
+			panic("not reached")
+		},
+		createContainer: func(config *dockerclient.ContainerConfig, name string) (string, error) {
+			return "", nil
+		},
+		startContainer: func(id string, config *dockerclient.HostConfig) error {
+			return nil
+		},
+	}
+	ensure.Nil(t, container.Apply(client))
+}

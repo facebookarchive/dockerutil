@@ -104,7 +104,7 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 	ci, err := docker.InspectContainer(c.name)
 
 	// force remove existing
-	if c.forceRemoveExisting {
+	if ci != nil && c.forceRemoveExisting {
 		if err := docker.RemoveContainer(ci.Id, true, false); err != nil {
 			return stackerr.Wrap(err)
 		}
