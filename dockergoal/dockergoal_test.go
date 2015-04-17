@@ -262,3 +262,21 @@ func TestCheckRunningWithoutDesiredImageAndNoRemoveExisting(t *testing.T) {
 	ensure.Err(t, err, regexp.MustCompile("but desired image is"))
 	ensure.False(t, ok)
 }
+
+func TestCheckRunningImageIdentifyError(t *testing.T) {
+	givenErr := errors.New("")
+	const image = "x"
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: image,
+		},
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return nil, givenErr
+		},
+	}
+	ok, err := container.checkRunning(client, &dockerclient.ContainerInfo{Image: "z"})
+	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
+	ensure.False(t, ok)
+}
