@@ -660,3 +660,20 @@ func TestApplyGraphWithUnknownLinks(t *testing.T) {
 	err := ApplyGraph(client, containers)
 	ensure.Err(t, err, regexp.MustCompile(`expects unknown link "baz:foo"`))
 }
+
+func TestApplyGraphApplyError(t *testing.T) {
+	givenErr := errors.New("")
+	containers := []*Container{
+		{
+			name:            "n1",
+			containerConfig: &dockerclient.ContainerConfig{Image: "in1"},
+		},
+	}
+	client := &mockClient{
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			return nil, givenErr
+		},
+	}
+	err := ApplyGraph(client, containers)
+	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
+}
