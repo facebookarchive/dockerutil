@@ -263,6 +263,25 @@ func TestApplyRemovesExistingWithoutDesiredImage(t *testing.T) {
 	ensure.DeepEqual(t, removeCalls, 1)
 }
 
+func TestApplyRemovesExistingWithoutDesiredImageError(t *testing.T) {
+	givenErr := errors.New("")
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: "x",
+		},
+	}
+	client := &mockClient{
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			return &dockerclient.ContainerInfo{Id: "y", Image: "a"}, nil
+		},
+		listImages: func() ([]*dockerclient.Image, error) {
+			return nil, givenErr
+		},
+	}
+	err := container.Apply(client)
+	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
+}
+
 func TestCheckRunningWithDesiredImage(t *testing.T) {
 	const image = "x"
 	const id = "y"
