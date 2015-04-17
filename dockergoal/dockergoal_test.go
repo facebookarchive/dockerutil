@@ -429,7 +429,7 @@ func TestApplyInitialInspectError(t *testing.T) {
 	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
 }
 
-func TestCheckRunningWithDesiredImage(t *testing.T) {
+func TestCheckExistingWithDesiredImage(t *testing.T) {
 	const image = "x"
 	const id = "y"
 	container := &Container{
@@ -447,12 +447,12 @@ func TestCheckRunningWithDesiredImage(t *testing.T) {
 			}, nil
 		},
 	}
-	ok, err := container.checkRunning(client, &dockerclient.ContainerInfo{Image: id})
+	ok, err := container.checkExisting(client, &dockerclient.ContainerInfo{Image: id})
 	ensure.Nil(t, err)
 	ensure.True(t, ok)
 }
 
-func TestCheckRunningWithoutDesiredImageAndNoRemoveExisting(t *testing.T) {
+func TestCheckExistingWithoutDesiredImageAndNoRemoveExisting(t *testing.T) {
 	const image = "x"
 	container := &Container{
 		containerConfig: &dockerclient.ContainerConfig{
@@ -469,12 +469,12 @@ func TestCheckRunningWithoutDesiredImageAndNoRemoveExisting(t *testing.T) {
 			}, nil
 		},
 	}
-	ok, err := container.checkRunning(client, &dockerclient.ContainerInfo{Image: "z"})
+	ok, err := container.checkExisting(client, &dockerclient.ContainerInfo{Image: "z"})
 	ensure.Err(t, err, regexp.MustCompile("but desired image is"))
 	ensure.False(t, ok)
 }
 
-func TestCheckRunningImageIdentifyError(t *testing.T) {
+func TestCheckExistingImageIdentifyError(t *testing.T) {
 	givenErr := errors.New("")
 	const image = "x"
 	container := &Container{
@@ -487,15 +487,13 @@ func TestCheckRunningImageIdentifyError(t *testing.T) {
 			return nil, givenErr
 		},
 	}
-	ok, err := container.checkRunning(client, &dockerclient.ContainerInfo{Image: "z"})
+	ok, err := container.checkExisting(client, &dockerclient.ContainerInfo{Image: "z"})
 	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
 	ensure.False(t, ok)
 }
 
-func TestCheckRunningWithoutDesiredImageWithRemoveExisting(t *testing.T) {
+func TestCheckExistingWithoutDesiredImageWithRemoveExisting(t *testing.T) {
 	const image = "x"
-	const removeID = "y"
-	var removeCalls int
 	container := &Container{
 		containerConfig: &dockerclient.ContainerConfig{
 			Image: image,
@@ -511,23 +509,81 @@ func TestCheckRunningWithoutDesiredImageWithRemoveExisting(t *testing.T) {
 				},
 			}, nil
 		},
-		removeContainer: func(id string, force, volumes bool) error {
-			removeCalls++
-			ensure.DeepEqual(t, id, removeID)
-			return nil
-		},
 	}
 	ci := &dockerclient.ContainerInfo{
 		Image: "z",
-		Id:    removeID,
+		Id:    "y",
 	}
-	ok, err := container.checkRunning(client, ci)
+	ok, err := container.checkExisting(client, ci)
 	ensure.Nil(t, err)
 	ensure.False(t, ok)
-	ensure.DeepEqual(t, removeCalls, 1)
 }
 
-func TestCheckRunningRemoveError(t *testing.T) {
+func TestCheckExistingWithoutDesiredDNSWithoutRemoveExisting(t *testing.T) {
+	const imageID = "ii1"
+	const imageName = "in1"
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: imageName,
+		},
+		hostConfig: &dockerclient.HostConfig{
+			Dns: []string{"a"},
+		},
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{imageName},
+					Id:       imageID,
+				},
+			}, nil
+		},
+	}
+	ci := &dockerclient.ContainerInfo{
+		Image: imageID,
+		Id:    "y",
+	}
+	ok, err := container.checkExisting(client, ci)
+	ensure.Err(t, err, regexp.MustCompile("but desired DNS is"))
+	ensure.False(t, ok)
+}
+
+func TestCheckExistingWithoutDesiredDNSWithRemoveExisting(t *testing.T) {
+	const imageID = "ii1"
+	const imageName = "in1"
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: imageName,
+		},
+		hostConfig: &dockerclient.HostConfig{
+			Dns: []string{"a"},
+		},
+		removeExisting: true,
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{imageName},
+					Id:       imageID,
+				},
+			}, nil
+		},
+	}
+	ci := &dockerclient.ContainerInfo{
+		Image: imageID,
+		Id:    "y",
+		HostConfig: &dockerclient.HostConfig{
+			Dns: []string{"b"},
+		},
+	}
+	ok, err := container.checkExisting(client, ci)
+	ensure.Nil(t, err)
+	ensure.False(t, ok)
+}
+
+func TestApplyWithExistingRemoveError(t *testing.T) {
 	const image = "x"
 	givenErr := errors.New("")
 	container := &Container{
@@ -537,6 +593,12 @@ func TestCheckRunningRemoveError(t *testing.T) {
 		removeExisting: true,
 	}
 	client := &mockClient{
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			return &dockerclient.ContainerInfo{
+				Id:    "y",
+				Image: "z",
+			}, nil
+		},
 		listImages: func() ([]*dockerclient.Image, error) {
 			return []*dockerclient.Image{
 				{
@@ -549,13 +611,8 @@ func TestCheckRunningRemoveError(t *testing.T) {
 			return givenErr
 		},
 	}
-	ci := &dockerclient.ContainerInfo{
-		Id:    "y",
-		Image: "z",
-	}
-	ok, err := container.checkRunning(client, ci)
+	err := container.Apply(client)
 	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
-	ensure.False(t, ok)
 }
 
 func TestApplyGraphSingle(t *testing.T) {
@@ -676,4 +733,42 @@ func TestApplyGraphApplyError(t *testing.T) {
 	}
 	err := ApplyGraph(client, containers)
 	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
+}
+
+func TestEqualStrSlice(t *testing.T) {
+	cases := []struct {
+		A, B  []string
+		Equal bool
+	}{
+		{
+			Equal: true,
+		},
+		{
+			A:     []string{},
+			Equal: true,
+		},
+		{
+			A: []string{"a"},
+		},
+		{
+			B: []string{"a"},
+		},
+		{
+			A: []string{"a"},
+			B: []string{"b"},
+		},
+		{
+			A: []string{"a", "b"},
+			B: []string{"a"},
+		},
+		{
+			A:     []string{"a", "b"},
+			B:     []string{"a", "b"},
+			Equal: true,
+		},
+	}
+
+	for _, c := range cases {
+		ensure.DeepEqual(t, equalStrSlice(c.A, c.B), c.Equal, c)
+	}
 }

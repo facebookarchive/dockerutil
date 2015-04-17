@@ -106,7 +106,7 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 	ci, err := docker.InspectContainer(c.name)
 
 	// force remove existing
-	if ci != nil && c.forceRemoveExisting {
+	if err == nil && c.forceRemoveExisting {
 		if err := docker.RemoveContainer(ci.Id, true, false); err != nil {
 			return stackerr.Wrap(err)
 		}
@@ -116,7 +116,7 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 
 	// already exists
 	if err == nil {
-		ok, err := c.checkRunning(docker, ci)
+		ok, err := c.checkExisting(docker, ci)
 		if err != nil {
 			return err
 		}
@@ -127,7 +127,12 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 				return nil
 			}
 		} else {
-			// we just removed the running container and want to start a new one
+			// remove it and make it look like we need a new one
+			if err := docker.RemoveContainer(ci.Id, true, false); err != nil {
+				return stackerr.Wrap(err)
+			}
+
+			// this makes us go down the path of creating a new one
 			err = dockerclient.ErrNotFound
 		}
 	}
@@ -159,7 +164,7 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 	return nil
 }
 
-func (c *Container) checkRunning(docker dockerclient.Client, current *dockerclient.ContainerInfo) (bool, error) {
+func (c *Container) checkExisting(docker dockerclient.Client, current *dockerclient.ContainerInfo) (bool, error) {
 	// image comparison is by ID, so we need to find the ID of our desired image
 	desiredImageID, err := dockerutil.ImageID(docker, c.containerConfig.Image, nil)
 	if err != nil {
@@ -178,16 +183,33 @@ func (c *Container) checkRunning(docker dockerclient.Client, current *dockerclie
 			)
 		}
 
-		// otherwise remove it since it isn't want we want
-		if err := docker.RemoveContainer(current.Id, true, false); err != nil {
-			return false, stackerr.Wrap(err)
-		}
-
-		// trigger starting a new container
+		// trigger removing the existing container and starting a new one
 		return false, nil
 	}
 
-	// we're running the correct image
+	var currentDNS, desiredDNS []string
+	if c.hostConfig != nil {
+		desiredDNS = c.hostConfig.Dns
+	}
+	if current.HostConfig != nil {
+		currentDNS = current.HostConfig.Dns
+	}
+	if !equalStrSlice(currentDNS, desiredDNS) {
+		// if we aren't allowed to remove the existing container, consider this a failure
+		if !c.removeExisting {
+			return false, stackerr.Newf(
+				"container %q running with DNS %v but desired DNS is %v",
+				c.name,
+				currentDNS,
+				desiredDNS,
+			)
+		}
+
+		// trigger removing the existing container and starting a new one
+		return false, nil
+	}
+
+	// we're running with the desired configuration
 	return true, nil
 }
 
@@ -257,4 +279,16 @@ func ApplyGraph(docker dockerclient.Client, containers []*Container) error {
 	}
 
 	return nil
+}
+
+func equalStrSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i, v := range a {
+		if v != b[i] {
+			return false
+		}
+	}
+	return true
 }
