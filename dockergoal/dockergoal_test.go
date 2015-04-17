@@ -280,3 +280,38 @@ func TestCheckRunningImageIdentifyError(t *testing.T) {
 	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
 	ensure.False(t, ok)
 }
+
+func TestCheckRunningWithoutDesiredImageWithRemoveExisting(t *testing.T) {
+	const image = "x"
+	const removeID = "y"
+	var removeCalls int
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: image,
+		},
+		removeExisting: true,
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{image},
+					Id:       "y",
+				},
+			}, nil
+		},
+		removeContainer: func(id string, force, volumes bool) error {
+			removeCalls++
+			ensure.DeepEqual(t, id, removeID)
+			return nil
+		},
+	}
+	ci := &dockerclient.ContainerInfo{
+		Image: "z",
+		Id:    removeID,
+	}
+	ok, err := container.checkRunning(client, ci)
+	ensure.Nil(t, err)
+	ensure.False(t, ok)
+	ensure.DeepEqual(t, removeCalls, 1)
+}
