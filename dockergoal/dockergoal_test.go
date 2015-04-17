@@ -645,3 +645,18 @@ func TestApplyGraphWithLinks(t *testing.T) {
 	ensure.DeepEqual(t, <-inspectNames, container2Name)
 	ensure.DeepEqual(t, <-inspectNames, container1Name)
 }
+
+func TestApplyGraphWithUnknownLinks(t *testing.T) {
+	containers := []*Container{
+		{
+			name:            "n1",
+			containerConfig: &dockerclient.ContainerConfig{Image: "in1"},
+			hostConfig: &dockerclient.HostConfig{
+				Links: []string{"baz:foo"},
+			},
+		},
+	}
+	client := &mockClient{}
+	err := ApplyGraph(client, containers)
+	ensure.Err(t, err, regexp.MustCompile(`expects unknown link "baz:foo"`))
+}

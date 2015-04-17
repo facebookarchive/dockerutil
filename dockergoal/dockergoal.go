@@ -219,7 +219,7 @@ func ApplyGraph(docker dockerclient.Client, containers []*Container) error {
 
 					// make sure the link is known
 					if _, ok := known[parts[0]]; !ok {
-						return stackerr.Newf("%s expects unknown link %s", c.name, link)
+						return stackerr.Newf("%q expects unknown link %q", c.name, link)
 					}
 
 					// we need to wait for a dependency, schedule for the next round
