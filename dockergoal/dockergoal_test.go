@@ -311,6 +311,39 @@ func TestApplyWithWithDesiredImageAndRunning(t *testing.T) {
 	ensure.Nil(t, container.Apply(client))
 }
 
+func TestApplyWithWithDesiredImageAndNotRunning(t *testing.T) {
+	const image = "x"
+	const id = "y"
+	var startCalls int
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: image,
+		},
+	}
+	client := &mockClient{
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			return &dockerclient.ContainerInfo{
+				Id:    "a",
+				Image: id,
+			}, nil
+		},
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{image},
+					Id:       id,
+				},
+			}, nil
+		},
+		startContainer: func(id string, config *dockerclient.HostConfig) error {
+			startCalls++
+			return nil
+		},
+	}
+	ensure.Nil(t, container.Apply(client))
+	ensure.DeepEqual(t, startCalls, 1)
+}
+
 func TestCheckRunningWithDesiredImage(t *testing.T) {
 	const image = "x"
 	const id = "y"
