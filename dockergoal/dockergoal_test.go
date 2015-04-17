@@ -123,6 +123,25 @@ func TestApplyMakesNew(t *testing.T) {
 	ensure.DeepEqual(t, startCalls, 1)
 }
 
+func TestApplyCreateError(t *testing.T) {
+	givenErr := errors.New("")
+	container, err := NewContainer(
+		ContainerName("x"),
+		ContainerConfig(&dockerclient.ContainerConfig{Image: "foo"}),
+	)
+	ensure.Nil(t, err)
+	client := &mockClient{
+		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
+			return nil, dockerclient.ErrNotFound
+		},
+		createContainer: func(config *dockerclient.ContainerConfig, name string) (string, error) {
+			return "", givenErr
+		},
+	}
+	err = container.Apply(client)
+	ensure.True(t, stackerr.HasUnderlying(err, stackerr.Equals(givenErr)))
+}
+
 func TestApplyForceRemoveExisting(t *testing.T) {
 	const removeID = "y"
 	const newID = "z"
