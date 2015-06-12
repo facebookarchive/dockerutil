@@ -228,8 +228,9 @@ func TestApplyStartError(t *testing.T) {
 	client := &mockClient{
 		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
 			return &dockerclient.ContainerInfo{
-				Id:    "a",
-				Image: id,
+				Id:     "a",
+				Image:  id,
+				Config: &dockerclient.ContainerConfig{},
 			}, nil
 		},
 		listImages: func() ([]*dockerclient.Image, error) {
@@ -418,8 +419,9 @@ func TestApplyWithWithDesiredImageAndRunning(t *testing.T) {
 	client := &mockClient{
 		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
 			ci := &dockerclient.ContainerInfo{
-				Id:    "a",
-				Image: id,
+				Id:     "a",
+				Image:  id,
+				Config: &dockerclient.ContainerConfig{},
 			}
 			ci.State.Running = true
 			return ci, nil
@@ -448,8 +450,9 @@ func TestApplyWithWithDesiredImageAndNotRunning(t *testing.T) {
 	client := &mockClient{
 		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
 			return &dockerclient.ContainerInfo{
-				Id:    "a",
-				Image: id,
+				Id:     "a",
+				Image:  id,
+				Config: &dockerclient.ContainerConfig{},
 			}, nil
 		},
 		listImages: func() ([]*dockerclient.Image, error) {
@@ -503,7 +506,11 @@ func TestCheckExistingWithDesiredImage(t *testing.T) {
 			}, nil
 		},
 	}
-	ok, err := container.checkExisting(client, &dockerclient.ContainerInfo{Image: id})
+	ci := &dockerclient.ContainerInfo{
+		Image:  id,
+		Config: &dockerclient.ContainerConfig{},
+	}
+	ok, err := container.checkExisting(client, ci)
 	ensure.Nil(t, err)
 	ensure.True(t, ok)
 }
@@ -639,6 +646,192 @@ func TestCheckExistingWithoutDesiredDNSWithRemoveExisting(t *testing.T) {
 	ensure.False(t, ok)
 }
 
+func TestCheckExistingWithoutDesiredEnv(t *testing.T) {
+	const imageID = "ii1"
+	const imageName = "in1"
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: imageName,
+			Env: []string{
+				"a",
+			},
+		},
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{imageName},
+					Id:       imageID,
+				},
+			}, nil
+		},
+	}
+	ci := &dockerclient.ContainerInfo{
+		Image:  imageID,
+		Id:     "y",
+		Config: &dockerclient.ContainerConfig{},
+	}
+	ok, err := container.checkExisting(client, ci)
+	ensure.Err(t, err, regexp.MustCompile("but desired env is"))
+	ensure.False(t, ok)
+}
+
+func TestCheckExistingWithoutDesiredEnvWithRemoveExisting(t *testing.T) {
+	const imageID = "ii1"
+	const imageName = "in1"
+	container := &Container{
+		removeExisting: true,
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: imageName,
+			Env: []string{
+				"a",
+			},
+		},
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{imageName},
+					Id:       imageID,
+				},
+			}, nil
+		},
+	}
+	ci := &dockerclient.ContainerInfo{
+		Image:  imageID,
+		Id:     "y",
+		Config: &dockerclient.ContainerConfig{},
+	}
+	ok, err := container.checkExisting(client, ci)
+	ensure.Nil(t, err)
+	ensure.False(t, ok)
+}
+
+func TestCheckExistingWithoutDesiredCmd(t *testing.T) {
+	const imageID = "ii1"
+	const imageName = "in1"
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: imageName,
+			Cmd:   []string{"a"},
+		},
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{imageName},
+					Id:       imageID,
+				},
+			}, nil
+		},
+	}
+	ci := &dockerclient.ContainerInfo{
+		Image:  imageID,
+		Id:     "y",
+		Config: &dockerclient.ContainerConfig{},
+	}
+	ok, err := container.checkExisting(client, ci)
+	ensure.Err(t, err, regexp.MustCompile("but desired command is"))
+	ensure.False(t, ok)
+}
+
+func TestCheckExistingWithoutDesiredCmdWithRemoveExisting(t *testing.T) {
+	const imageID = "ii1"
+	const imageName = "in1"
+	container := &Container{
+		removeExisting: true,
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: imageName,
+			Cmd:   []string{"a"},
+		},
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{imageName},
+					Id:       imageID,
+				},
+			}, nil
+		},
+	}
+	ci := &dockerclient.ContainerInfo{
+		Image:  imageID,
+		Id:     "y",
+		Config: &dockerclient.ContainerConfig{},
+	}
+	ok, err := container.checkExisting(client, ci)
+	ensure.Nil(t, err)
+	ensure.False(t, ok)
+}
+
+func TestCheckExistingWithoutDesiredBinds(t *testing.T) {
+	const imageID = "ii1"
+	const imageName = "in1"
+	container := &Container{
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: imageName,
+		},
+		hostConfig: &dockerclient.HostConfig{
+			Binds: []string{"a:b"},
+		},
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{imageName},
+					Id:       imageID,
+				},
+			}, nil
+		},
+	}
+	ci := &dockerclient.ContainerInfo{
+		Image:  imageID,
+		Id:     "y",
+		Config: &dockerclient.ContainerConfig{},
+	}
+	ok, err := container.checkExisting(client, ci)
+	ensure.Err(t, err, regexp.MustCompile("but desired volumes are"))
+	ensure.False(t, ok)
+}
+
+func TestCheckExistingWithoutDesiredBindsWithRemoveExisting(t *testing.T) {
+	const imageID = "ii1"
+	const imageName = "in1"
+	container := &Container{
+		removeExisting: true,
+		containerConfig: &dockerclient.ContainerConfig{
+			Image: imageName,
+		},
+		hostConfig: &dockerclient.HostConfig{
+			Binds: []string{"a:b"},
+		},
+	}
+	client := &mockClient{
+		listImages: func() ([]*dockerclient.Image, error) {
+			return []*dockerclient.Image{
+				{
+					RepoTags: []string{imageName},
+					Id:       imageID,
+				},
+			}, nil
+		},
+	}
+	ci := &dockerclient.ContainerInfo{
+		Image:   imageID,
+		Id:      "y",
+		Config:  &dockerclient.ContainerConfig{},
+		Volumes: map[string]string{"a": "d"},
+	}
+	ok, err := container.checkExisting(client, ci)
+	ensure.Nil(t, err)
+	ensure.False(t, ok)
+}
+
 func TestApplyWithExistingRemoveError(t *testing.T) {
 	const image = "x"
 	givenErr := errors.New("")
@@ -739,8 +932,9 @@ func TestApplyGraphWithLinks(t *testing.T) {
 		inspectContainer: func(name string) (*dockerclient.ContainerInfo, error) {
 			inspectNames <- name
 			ci := &dockerclient.ContainerInfo{
-				Id:    "x",
-				Image: imageID,
+				Id:     "x",
+				Image:  imageID,
+				Config: &dockerclient.ContainerConfig{},
 			}
 			ci.State.Running = true
 			return ci, nil
@@ -826,5 +1020,74 @@ func TestEqualStrSlice(t *testing.T) {
 
 	for _, c := range cases {
 		ensure.DeepEqual(t, equalStrSlice(c.A, c.B), c.Equal, c)
+	}
+}
+
+func TestHasSuffixStrSlice(t *testing.T) {
+	cases := []struct {
+		S      []string
+		Suffix []string
+		Result bool
+	}{
+		{
+			S:      []string{"a"},
+			Suffix: []string{"b"},
+			Result: false,
+		},
+		{
+			S:      []string{},
+			Suffix: []string{"b"},
+			Result: false,
+		},
+		{
+			S:      []string{"b"},
+			Suffix: []string{},
+			Result: true,
+		},
+		{
+			Result: true,
+		},
+		{
+			S:      []string{},
+			Suffix: []string{},
+			Result: true,
+		},
+	}
+
+	for _, c := range cases {
+		ensure.DeepEqual(t, hasSuffixStrSlice(c.S, c.Suffix), c.Result, c)
+	}
+}
+
+func TestStrSliceSubset(t *testing.T) {
+	cases := []struct {
+		All    []string
+		Subset []string
+		Result bool
+	}{
+		{
+			All:    []string{},
+			Subset: []string{},
+			Result: true,
+		},
+		{
+			All:    []string{"a"},
+			Subset: []string{"b"},
+			Result: false,
+		},
+		{
+			All:    []string{"a"},
+			Subset: []string{"a"},
+			Result: true,
+		},
+		{
+			All:    []string{"a", "b"},
+			Subset: []string{"a"},
+			Result: true,
+		},
+	}
+
+	for _, c := range cases {
+		ensure.DeepEqual(t, strSliceSubset(c.All, c.Subset), c.Result, c)
 	}
 }

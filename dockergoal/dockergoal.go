@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/facebookgo/dockerutil"
-	"github.com/facebookgo/errgroup"
 	"github.com/facebookgo/stackerr"
 	"github.com/samalba/dockerclient"
 )
@@ -115,47 +114,48 @@ func ContainerAfterCreate(f func(containerID string) error) ContainerOption {
 // container options that were set.
 func (c *Container) Apply(docker dockerclient.Client) error {
 	ci, err := docker.InspectContainer(c.name)
+	createIt := false
 
-	// force remove existing
-	if err == nil && c.forceRemoveExisting {
-		if err := docker.RemoveContainer(ci.Id, true, false); err != nil {
+	if err != nil {
+		// unknown error, bail
+		if err != dockerclient.ErrNotFound {
 			return stackerr.Wrap(err)
 		}
-		// we just removed the running container and want to start a new one
-		err = dockerclient.ErrNotFound
-	}
 
-	// already exists
-	if err == nil {
-		ok, err := c.checkExisting(docker, ci)
-		if err != nil {
-			return err
-		}
-		if ok {
-			// existing container is good
-			if ci.State.Running {
-				// and it's already running, so we do nothing
-				return nil
-			}
-		} else {
-			// remove it and make it look like we need a new one
+		// container does not exist, create it
+		createIt = true
+	} else {
+		// force remove existing
+		if c.forceRemoveExisting {
 			if err := docker.RemoveContainer(ci.Id, true, false); err != nil {
 				return stackerr.Wrap(err)
 			}
-
-			// this makes us go down the path of creating a new one
-			err = dockerclient.ErrNotFound
+			createIt = true
+		} else {
+			// already exists, check it
+			ok, err := c.checkExisting(docker, ci)
+			if err != nil {
+				return err
+			}
+			if ok {
+				// existing container is good
+				if ci.State.Running {
+					// and it's already running, so we do nothing
+					return nil
+				}
+				// keep going, we need to start it
+			} else {
+				// existing container is not acceptable, remove it and create a new one
+				if err := docker.RemoveContainer(ci.Id, true, false); err != nil {
+					return stackerr.Wrap(err)
+				}
+				createIt = true
+			}
 		}
 	}
 
-	// unknown error, bail
-	if err != nil && err != dockerclient.ErrNotFound {
-		return stackerr.Wrap(err)
-	}
-
-	// container does not exist, create it
-	var created bool
-	if err == dockerclient.ErrNotFound {
+	// container needs to be created
+	if createIt {
 		_, err := dockerutil.CreateWithPull(docker, c.containerConfig, c.name, c.authConfig)
 		if err != nil {
 			return err
@@ -165,8 +165,6 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 		if err != nil {
 			return stackerr.Wrap(err)
 		}
-
-		created = true
 	}
 
 	// start the container
@@ -175,7 +173,7 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 		return stackerr.Wrap(err)
 	}
 
-	if created && c.afterCreate != nil {
+	if createIt && c.afterCreate != nil {
 		if err := c.afterCreate(ci.Id); err != nil {
 			docker.RemoveContainer(ci.Id, true, false)
 			return stackerr.Wrap(err)
@@ -186,12 +184,31 @@ func (c *Container) Apply(docker dockerclient.Client) error {
 }
 
 func (c *Container) checkExisting(docker dockerclient.Client, current *dockerclient.ContainerInfo) (bool, error) {
+	if equal, err := c.checkExistingImage(docker, current); !equal || err != nil {
+		return false, err
+	}
+	if equal, err := c.checkExistingDNS(current); !equal || err != nil {
+		return false, err
+	}
+	if equal, err := c.checkExistingCmd(current); !equal || err != nil {
+		return false, err
+	}
+	if equal, err := c.checkExistingEnv(current); !equal || err != nil {
+		return false, err
+	}
+	if equal, err := c.checkExistingBinds(current); !equal || err != nil {
+		return false, err
+	}
+	// we're running with the desired configuration
+	return true, nil
+}
+
+func (c *Container) checkExistingImage(docker dockerclient.Client, current *dockerclient.ContainerInfo) (bool, error) {
 	// image comparison is by ID, so we need to find the ID of our desired image
-	desiredImageID, err := dockerutil.ImageID(docker, c.containerConfig.Image, nil)
+	desiredImageID, err := dockerutil.ImageID(docker, c.containerConfig.Image, c.authConfig)
 	if err != nil {
 		return false, err
 	}
-
 	if current.Image != desiredImageID {
 		// if we aren't allowed to remove the existing container, consider this a failure
 		if !c.removeExisting {
@@ -207,7 +224,10 @@ func (c *Container) checkExisting(docker dockerclient.Client, current *dockercli
 		// trigger removing the existing container and starting a new one
 		return false, nil
 	}
+	return true, nil
+}
 
+func (c *Container) checkExistingDNS(current *dockerclient.ContainerInfo) (bool, error) {
 	var currentDNS, desiredDNS []string
 	if c.hostConfig != nil {
 		desiredDNS = c.hostConfig.Dns
@@ -229,8 +249,66 @@ func (c *Container) checkExisting(docker dockerclient.Client, current *dockercli
 		// trigger removing the existing container and starting a new one
 		return false, nil
 	}
+	return true, nil
+}
 
-	// we're running with the desired configuration
+func (c *Container) checkExistingCmd(current *dockerclient.ContainerInfo) (bool, error) {
+	// we only check the tail of the current command matches because it includes
+	// the entrypoint defined in the container dockerfile as well.
+	if !hasSuffixStrSlice(current.Config.Cmd, c.containerConfig.Cmd) {
+		// if we aren't allowed to remove the existing container, consider this a failure
+		if !c.removeExisting {
+			return false, stackerr.Newf(
+				"container %q running with command %v but desired command is %v",
+				c.name,
+				current.Config.Cmd,
+				c.containerConfig.Cmd,
+			)
+		}
+
+		// trigger removing the existing container and starting a new one
+		return false, nil
+	}
+	return true, nil
+}
+
+func (c *Container) checkExistingEnv(current *dockerclient.ContainerInfo) (bool, error) {
+	// we only check for a subset because the current env includes the
+	// environment variables defined the container dockerfile as well.
+	if !strSliceSubset(current.Config.Env, c.containerConfig.Env) {
+		// if we aren't allowed to remove the existing container, consider this a failure
+		if !c.removeExisting {
+			return false, stackerr.Newf(
+				"container %q running with env %v but desired env is %v",
+				c.name,
+				current.Config.Env,
+				c.containerConfig.Env,
+			)
+		}
+
+		// trigger removing the existing container and starting a new one
+		return false, nil
+	}
+	return true, nil
+}
+
+func (c *Container) checkExistingBinds(current *dockerclient.ContainerInfo) (bool, error) {
+	// we only check for a subset because the current volumes includes the
+	// ones defined the container dockerfile as well.
+	if c.hostConfig != nil && !strSliceSubset(flattenVolumes(current.Volumes), c.hostConfig.Binds) {
+		// if we aren't allowed to remove the existing container, consider this a failure
+		if !c.removeExisting {
+			return false, stackerr.Newf(
+				"container %q running with volumes %v but desired volumes are %v",
+				c.name,
+				current.Volumes,
+				c.hostConfig.Binds,
+			)
+		}
+
+		// trigger removing the existing container and starting a new one
+		return false, nil
+	}
 	return true, nil
 }
 
@@ -245,12 +323,9 @@ func ApplyGraph(docker dockerclient.Client, containers []*Container) error {
 		known[c.name] = struct{}{}
 	}
 
-	// TODO: parallel pull pass?
-
-	// keep doing rounds of parallel starts until we're all done or error out
+	// keep doing rounds of starts until we're all done or error out
 	pending := containers
 	for len(pending) > 0 {
-		var eg errgroup.Group
 		var starting []string
 		var nextRound []*Container
 
@@ -276,18 +351,9 @@ func ApplyGraph(docker dockerclient.Client, containers []*Container) error {
 			}
 
 			starting = append(starting, c.name)
-			eg.Add(1)
-			go func(c *Container) {
-				defer eg.Done()
-				if err := c.Apply(docker); err != nil {
-					eg.Error(err)
-				}
-			}(c)
-		}
-
-		// now wait for all the containers we started in parallel
-		if err := eg.Wait(); err != nil {
-			return err
+			if err := c.Apply(docker); err != nil {
+				return err
+			}
 		}
 
 		// we successfully started them
@@ -312,4 +378,39 @@ func equalStrSlice(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func hasSuffixStrSlice(s, suffix []string) bool {
+	lenSuffix := len(suffix)
+	lenS := len(s)
+	if lenSuffix > lenS {
+		return false
+	}
+	return equalStrSlice(s[lenS-lenSuffix:], suffix)
+}
+
+func strSliceSubset(big, subset []string) bool {
+	for _, v := range subset {
+		if !containsStr(big, v) {
+			return false
+		}
+	}
+	return true
+}
+
+func containsStr(all []string, target string) bool {
+	for _, v := range all {
+		if v == target {
+			return true
+		}
+	}
+	return false
+}
+
+func flattenVolumes(volumes map[string]string) []string {
+	res := make([]string, len(volumes))
+	for k, v := range volumes {
+		res = append(res, v+":"+k)
+	}
+	return res
 }

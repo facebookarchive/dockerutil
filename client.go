@@ -191,3 +191,22 @@ func AuthConfigFromFile(file string) (*dockerclient.AuthConfig, error) {
 	ac.Password = string(parts[1])
 	return &ac, nil
 }
+
+func WriteDockerAuthConfig(file string, ac *dockerclient.AuthConfig) error {
+	f, err := os.Create(file)
+	if err != nil {
+		return stackerr.Wrap(err)
+	}
+	defer f.Close()
+	auth := []byte(ac.Username + ":" + ac.Password)
+	data := map[string]map[string]string{
+		"https://index.docker.io/v1/": {
+			"email": ac.Email,
+			"auth":  base64.URLEncoding.EncodeToString(auth),
+		},
+	}
+	if err := json.NewEncoder(f).Encode(data); err != nil {
+		return stackerr.Wrap(err)
+	}
+	return stackerr.Wrap(f.Close())
+}
